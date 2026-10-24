@@ -44,7 +44,7 @@ async def async_setup(hass, config):
         StaticPathConfig("/lg_thinq_native_timer_static",
                          str(Path(__file__).parent / "frontend"), True)
     ])
-    add_extra_js_url(hass, "/lg_thinq_native_timer_static/lg-thinq-timer-card.js?v=0.2.0")
+    add_extra_js_url(hass, "/lg_thinq_native_timer_static/lg-thinq-timer-card.js?v=0.2.1")
 
     async def handle(call):
         api, device_id = resolve_device(hass, call.data["entity_id"])
@@ -59,7 +59,7 @@ async def async_setup(hass, config):
                     if not isinstance(state, dict):
                         raise HomeAssistantError("LG 未傳回有效設備狀態。")
                     return {
-                        "integration_version": "0.2.0",
+                        "integration_version": "0.2.1",
                         "profile_sleepTimer": timer_profile(profile),
                         "observed": snapshot(state),
                         "note": "有狀態回報不等於允許寫入；請檢查 profile 的 mode 與 value.w。",

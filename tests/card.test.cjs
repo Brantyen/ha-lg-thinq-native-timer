@@ -128,3 +128,6 @@ test("graphical editor preserves config when selecting an entity",()=>{
   assert.equal(e.lastEvent.detail.config.entity,entity);
   assert.equal(e.lastEvent.detail.config.name,"客廳");
 });
+
+test("sections use content height instead of eight fixed rows",()=>{const {Card}=setup();const c=new Card(); assert.equal(c.getGridOptions().rows,"auto"); assert.equal(c.getGridOptions().min_rows,undefined);});
+test("masonry reports measured card height",()=>{const {Card}=setup();const c=new Card();c.shadowRoot.querySelector=()=>({getBoundingClientRect:()=>({height:731})});assert.equal(c.getCardSize(),15);});

@@ -1,4 +1,4 @@
-/* LG ThinQ Native Timer Card v0.2.0. No external scripts or credentials. */
+/* LG ThinQ Native Timer Card v0.2.1. No external scripts or credentials. */
 (() => {
   "use strict";
   const TAG = "lg-thinq-timer-card";
@@ -19,18 +19,18 @@
     const el = E("ha-icon"); el.setAttribute("icon", name); return el;
   };
   const CSS = [
-    ":host{display:block;--accent:#2d71f5;--soft:rgba(45,113,245,.09);--muted:var(--secondary-text-color,#6f7785);font-family:var(--paper-font-body1_-_font-family,system-ui,sans-serif)}",
+    ":host{display:block;min-width:0;height:auto;align-self:start;--accent:#2d71f5;--soft:rgba(45,113,245,.09);--muted:var(--secondary-text-color,#6f7785);font-family:var(--paper-font-body1_-_font-family,system-ui,sans-serif)}",
     "ha-card{display:block;padding:24px;border-radius:28px;background:var(--ha-card-background,var(--card-background-color,#fff));color:var(--primary-text-color,#1c2431);border:1px solid var(--divider-color,rgba(0,0,0,.06));box-shadow:var(--ha-card-box-shadow,0 4px 22px rgba(20,40,80,.04));overflow:hidden}",
     "*{box-sizing:border-box}.header,.row{display:flex;align-items:center;justify-content:space-between;gap:12px}h2{font-size:20px;line-height:1.4;margin:0;font-weight:700}.sub{font-size:12px;color:var(--muted);margin:5px 0 0;line-height:1.6}",
     "button,select{font:inherit}button{cursor:pointer;border:0;min-height:44px;border-radius:14px;font-weight:600;transition:background .15s,opacity .15s}button:disabled{opacity:.42;cursor:default}button:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:3px}",
     ".power{width:48px;height:48px;flex:0 0 48px;border-radius:50%;background:var(--soft);color:var(--accent)}.power[data-on=false]{color:var(--muted);background:var(--secondary-background-color,#f1f3f6)}",
     ".device-state{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-top:18px}.dot{width:6px;height:6px;border-radius:50%;background:#8c94a2}.dot[data-on=true]{background:#28ae7b}",
-    ".dial{width:190px;height:190px;max-width:100%;margin:18px auto 22px;border-radius:50%;border:9px solid var(--soft);display:flex;align-items:center;justify-content:center;text-align:center;flex-direction:column;gap:6px}.dial ha-icon{--mdc-icon-size:26px;color:var(--accent)}.time{font-size:34px;font-weight:700;letter-spacing:-1px;font-variant-numeric:tabular-nums;line-height:1.3}.dial-label{font-size:12px;color:var(--muted)}",
-    ".section-label{font-size:14px;font-weight:600;margin-bottom:10px}.select{display:block;width:100%;height:50px;border:1px solid var(--divider-color,#e4e8ef);border-radius:14px;padding:0 14px;background:var(--secondary-background-color,#f6f7fa);color:inherit;font-size:16px}",
+    ".dial{width:190px;height:190px;max-width:100%;margin:18px auto 22px;border-radius:50%;border:9px solid var(--soft);display:flex;align-items:center;justify-content:center;text-align:center;flex-direction:column;gap:6px}.dial ha-icon{--mdc-icon-size:26px;color:var(--accent)}.time{max-width:100%;font-size:30px;font-weight:700;letter-spacing:-1px;font-variant-numeric:tabular-nums;line-height:1.3}.dial-label{max-width:148px;font-size:11px;line-height:1.5;color:var(--muted)}",
+    ".section-label{display:block;font-size:14px;font-weight:600;margin-bottom:10px}.select{display:block;width:100%;height:50px;border:1px solid var(--divider-color,#e4e8ef);border-radius:14px;padding:0 14px;background:var(--secondary-background-color,#f6f7fa);color:inherit;font-size:16px}",
     ".presets{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 18px}.preset{background:var(--secondary-background-color,#f3f5f8);color:var(--muted);font-size:13px}.preset[aria-pressed=true]{background:var(--soft);color:var(--accent)}",
     ".apply{display:block;width:100%;background:var(--accent);color:#fff;font-size:16px;min-height:50px}.cancel{display:block;width:100%;background:transparent;color:var(--muted);margin-top:6px}.footer{border-top:1px solid var(--divider-color,#e7eaf0);padding-top:14px;margin-top:8px}.refresh{background:transparent;color:var(--accent);min-height:36px;padding:0 10px;font-size:13px}.stamp{font-size:11px;color:var(--muted);line-height:1.6}",
     ".message{font-size:13px;line-height:1.6;margin:10px 0 0;min-height:21px;overflow-wrap:anywhere}.message[data-error=true]{color:var(--error-color,#d64444)}.message[data-error=false]{color:var(--muted)}.setup{font-size:14px;line-height:1.8;color:var(--muted);padding:30px 0}ha-icon{display:inline-flex;align-items:center;justify-content:center}",
-    "@media(max-width:360px){ha-card{padding:18px}.dial{width:168px;height:168px}.time{font-size:29px}.presets{gap:5px}.preset{font-size:12px}}"
+    "@media(max-width:360px){ha-card{padding:18px}.dial{width:168px;height:168px}.time{font-size:27px}.presets{gap:5px}.preset{font-size:12px}}"
   ].join("\n");
 
   class LGTimerCard extends HTMLElement {
@@ -40,8 +40,8 @@
     }
     static getConfigElement() { return document.createElement(TAG+"-editor"); }
     static getStubConfig() { return {name:"LG 除濕機"}; }
-    getCardSize() { return 8; }
-    getGridOptions() { return {columns:12,rows:8,min_columns:6,min_rows:7}; }
+    getCardSize() { return Math.ceil((this.shadowRoot?.querySelector?.('ha-card')?.getBoundingClientRect?.().height || 650) / 50); }
+    getGridOptions() { return {columns:12,rows:"auto",min_columns:6}; }
     setConfig(config) {
       if (config.entity && !/^(switch|humidifier)\.[a-z0-9_]+$/.test(config.entity))
         throw new Error("請選擇官方 LG ThinQ 除濕機的 switch 或 humidifier 實體。");

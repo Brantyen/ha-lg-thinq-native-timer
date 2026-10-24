@@ -1,10 +1,13 @@
 name: Publish installable ZIP
 on:
+  push:
+    paths:
+      - 'custom_components/lg_thinq_native_timer/manifest.json'
   workflow_dispatch:
     inputs:
       version:
         description: Release tag
-        default: v0.2.0
+        default: v0.2.1
         required: true
 permissions:
   contents: write
@@ -29,4 +32,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
-        run: gh release create "$VERSION" lg_thinq_native_timer.zip --title "$VERSION" --generate-notes
+        run: |
+          if [ -z "$VERSION" ]; then
+            VERSION="v$(python -c "import json; print(json.load(open('custom_components/lg_thinq_native_timer/manifest.json'))['version'])")"
+          fi
+          gh release create "$VERSION" lg_thinq_native_timer.zip --title "$VERSION" --generate-notes
