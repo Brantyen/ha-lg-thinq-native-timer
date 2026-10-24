@@ -39,3 +39,7 @@ cancel_timer:
       selector:
         entity:
           integration: lg_thinq
+
+frontend_status:
+  name: 檢查前端載入狀態
+  description: 不需實體 ID，回傳實際載入版本、前端檔案是否存在及卡片網址。

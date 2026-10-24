@@ -1,4 +1,4 @@
-/* LG ThinQ Native Timer Card v0.2.1. No external scripts or credentials. */
+/* LG ThinQ Native Timer Card v0.2.2. No external scripts or credentials. */
 (() => {
   "use strict";
   const TAG = "lg-thinq-timer-card";
@@ -283,3 +283,4 @@
     type:TAG,name:"LG ThinQ 原生定時",description:"ThinQ 風格的除濕機原生定時選單、狀態與取消按鈕",preview:true
   });
 })();
+
