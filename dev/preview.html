@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LG 原生定時 · 介面預覽</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f5f8;font-family:system-ui,sans-serif;color:#202735;padding:24px}header{max-width:900px;margin:0 auto 24px}h1{font-size:24px;margin:0 0 8px}p{font-size:14px;line-height:1.8;color:#70798a}main{max-width:420px;margin:auto}footer{max-width:420px;margin:22px auto;font-size:12px;color:#6d7685;line-height:1.8}button{font:inherit;padding:8px 12px;border:1px solid #ddd;border-radius:8px;background:white;cursor:pointer}#log{white-space:pre-wrap;font-family:monospace;font-size:12px}body.dark{background:#151922;--ha-card-background:#232936;--primary-text-color:#f3f5fa;--secondary-text-color:#aab3c4;--secondary-background-color:#2b3342;--divider-color:#354050;color:#fff}
+</style>
+<header><h1>LG 原生定時</h1><p>介面預覽 · 模擬資料，不連接設備</p><button id="theme">切換深淺色</button> <button id="fail">下一次模擬錯誤</button></header>
+<main><lg-thinq-timer-card></lg-thinq-timer-card></main>
+<footer><div>時間選單、快捷按鈕、設定、取消與錯誤狀態皆可操作。預覽中的倒數是模擬資料。</div><pre id="log">等待操作</pre></footer>
+<script type="module">
+import "../custom_components/lg_thinq_native_timer/frontend/lg-thinq-timer-card.js";
+customElements.define("ha-icon",class extends HTMLElement{
+ connectedCallback(){this.textContent=this.getAttribute("icon")==="mdi:power"?"⏻":"◷";}
+});
+let fail=false,observed={timer_state:"SET",remaining_minutes:118};
+const fixture={
+ relativeHourToStop:{type:"number",mode:["r","w"]},
+ relativeMinuteToStop:{type:"number",mode:["r"]},
+ relativeStopTimer:{type:"enum",mode:["r","w"],value:{r:["SET","UNSET"],w:["UNSET"]}}
+};
+const card=document.querySelector("lg-thinq-timer-card");
+const mock={
+ states:{"humidifier.demo_lg":{state:"on",attributes:{friendly_name:"客廳除濕機"}}},
+ callWS:async(req)=>{
+  document.querySelector("#log").textContent=JSON.stringify(req,null,2);
+  if(req.type==="config/entity_registry/list")return [{entity_id:"humidifier.demo_lg",platform:"lg_thinq"}];
+  if(fail){fail=false;throw new Error("LG 連線失敗，請稍後再試。");}
+  if(req.service==="set_timer")observed={timer_state:"SET",remaining_minutes:req.service_data.minutes};
+  if(req.service==="cancel_timer")observed={timer_state:"UNSET",remaining_minutes:null};
+  return {response:{profile_sleepTimer:fixture,observed,accepted_by_api:true,verified_by_readback:true}};
+ },
+ callService:async(domain,service,data)=>{
+  mock.states[data.entity_id].state=service==="turn_off"?"off":"on";card.hass={...mock};
+ }
+};
+card.setConfig({entity:"humidifier.demo_lg",name:"客廳除濕機"});
+card.hass=mock;
+document.querySelector("#theme").onclick=()=>document.body.classList.toggle("dark");
+document.querySelector("#fail").onclick=()=>{fail=true;document.querySelector("#log").textContent="下一次請求將模擬連線錯誤";};
+</script>
+</html>

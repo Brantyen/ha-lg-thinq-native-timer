@@ -1,0 +1,15 @@
+{
+  "title": "LG ThinQ Native Timer",
+  "config": {
+    "step": {
+      "user": {
+        "title": "LG native timer",
+        "description": "Use the existing official LG ThinQ connection. No additional token is needed. Add the LG ThinQ Native Timer dashboard card and select your dehumidifier."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only one instance is needed.",
+      "lg_thinq_required": "Set up the official LG ThinQ integration first."
+    }
+  }
+}

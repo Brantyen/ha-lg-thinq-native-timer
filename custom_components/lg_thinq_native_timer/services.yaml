@@ -1,0 +1,41 @@
+inspect_timer:
+  name: 檢查 LG 原生定時能力
+  description: 只讀取 sleepTimer 設定檔與目前狀態，不修改設備。回應不含 Token 或設備識別碼。
+  fields:
+    entity_id:
+      name: 除濕機實體
+      required: true
+      selector:
+        entity:
+          integration: lg_thinq
+set_timer:
+  name: 設定 LG 原生關機定時
+  description: 先驗證 LG profile 的寫入權限與範圍，再設定原生定時並讀回確認。
+  fields:
+    entity_id:
+      name: 除濕機實體
+      required: true
+      selector:
+        entity:
+          integration: lg_thinq
+    minutes:
+      name: 幾分鐘後關機
+      required: true
+      example: 120
+      selector:
+        number:
+          min: 1
+          max: 1440
+          step: 1
+          mode: box
+          unit_of_measurement: min
+cancel_timer:
+  name: 取消 LG 原生定時
+  description: 僅當設備 profile 明確允許寫入 UNSET 時送出取消，否則提示用 ThinQ App 取消。
+  fields:
+    entity_id:
+      name: 除濕機實體
+      required: true
+      selector:
+        entity:
+          integration: lg_thinq

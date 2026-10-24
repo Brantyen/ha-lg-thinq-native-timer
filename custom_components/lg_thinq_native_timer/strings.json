@@ -1,0 +1,15 @@
+{
+  "title": "LG ThinQ Native Timer",
+  "config": {
+    "step": {
+      "user": {
+        "title": "LG 原生定時",
+        "description": "沿用官方 LG ThinQ 連線，無需另外輸入 Token。啟用後請在儀表板新增「LG ThinQ 原生定時」卡片，從選單選擇除濕機。"
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "此擴充只需設定一次。",
+      "lg_thinq_required": "請先設定 Home Assistant 官方 LG ThinQ 整合。"
+    }
+  }
+}
