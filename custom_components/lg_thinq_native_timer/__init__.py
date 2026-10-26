@@ -46,13 +46,13 @@ async def async_setup(hass, config):
         StaticPathConfig("/lg_thinq_native_timer_card.js",
                          str(Path(__file__).parent / "frontend" / "lg-thinq-timer-card.js"), False)
     ])
-    add_extra_js_url(hass, "/lg_thinq_native_timer_card.js?v=0.2.2")
+    add_extra_js_url(hass, "/lg_thinq_native_timer_card.js?v=0.2.3")
 
     async def frontend_status(call):
         exists = await hass.async_add_executor_job(
             (Path(__file__).parent / "frontend" / "lg-thinq-timer-card.js").is_file)
-        return {"loaded_version": "0.2.2", "frontend_file_exists": exists,
-                "resource_url": "/lg_thinq_native_timer_card.js?v=0.2.2",
+        return {"loaded_version": "0.2.3", "frontend_file_exists": exists,
+                "resource_url": "/lg_thinq_native_timer_card.js?v=0.2.3",
                 "static_registration_completed": True}
 
     hass.services.async_register(DOMAIN, "frontend_status", frontend_status,
@@ -71,7 +71,7 @@ async def async_setup(hass, config):
                     if not isinstance(state, dict):
                         raise HomeAssistantError("LG 未傳回有效設備狀態。")
                     return {
-                        "integration_version": "0.2.2",
+                        "integration_version": "0.2.3",
                         "profile_sleepTimer": timer_profile(profile),
                         "observed": snapshot(state),
                         "note": "有狀態回報不等於允許寫入；請檢查 profile 的 mode 與 value.w。",

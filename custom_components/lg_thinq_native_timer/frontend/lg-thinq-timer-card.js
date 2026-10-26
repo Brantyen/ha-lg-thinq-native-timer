@@ -1,4 +1,4 @@
-/* LG ThinQ Native Timer Card v0.2.2. No external scripts or credentials. */
+/* LG ThinQ Native Timer Card v0.2.3. No external scripts or credentials. */
 (() => {
   "use strict";
   const TAG = "lg-thinq-timer-card";
@@ -45,6 +45,8 @@
     setConfig(config) {
       if (config.entity && !/^(switch|humidifier)\.[a-z0-9_]+$/.test(config.entity))
         throw new Error("請選擇官方 LG ThinQ 除濕機的 switch 或 humidifier 實體。");
+      if (config.power_entity && !/^(switch|humidifier)\.[a-z0-9_]+$/.test(config.power_entity))
+        throw new Error("電源實體必須是 switch 或 humidifier。");
       const changed = this._config?.entity !== config.entity;
       this._config={...config};
       if(changed) {
@@ -135,7 +137,7 @@
       const canSet=hourSpec?.mode?.includes("w");
       const canCancel=this._profile?.relativeStopTimer?.mode?.includes("w")
         && this._profile?.relativeStopTimer?.value?.w?.includes("UNSET");
-      const powerState=this._hass?.states?.[this._config?.entity]?.state;
+      const powerState=this._hass?.states?.[this._config?.power_entity || this._config?.entity]?.state;
       const online=powerState && !["unknown","unavailable"].includes(powerState);
       n.select.disabled=this._busy;
       n.apply.disabled=this._busy || !this._validated || !canSet || !online || powerState==="off" || !hours.length;
@@ -150,7 +152,7 @@
     }
     _update() {
       if(!this._nodes) return;
-      const n=this._nodes, entity=this._config?.entity, state=this._hass?.states?.[entity];
+      const n=this._nodes, entity=this._config?.entity, state=this._hass?.states?.[this._config?.power_entity || entity];
       n.title.textContent=this._config?.name||state?.attributes?.friendly_name||"LG 除濕機";
       n.setup.hidden=Boolean(entity); n.content.hidden=!entity; n.power.hidden=!entity;
       const isOn=state && !["off","unknown","unavailable"].includes(state.state);
@@ -220,10 +222,11 @@
     }
     async _power() {
       if(this._busy || !this._validated) return;
-      const state=this._hass.states[this._config.entity]?.state;
+      const powerEntity=this._config.power_entity || this._config.entity;
+      const state=this._hass.states[powerEntity]?.state;
       const gen=this._generation;this._busy=true;this._update();
       try {
-        await this._hass.callService("homeassistant",state==="off"?"turn_on":"turn_off",{entity_id:this._config.entity});
+        await this._hass.callService("homeassistant",state==="off"?"turn_on":"turn_off",{entity_id:powerEntity});
         if(gen===this._generation) {this._error=false;this._message="電源指令已送出，等待設備回報。";}
       } catch(e) {
         if(gen===this._generation){this._error=true;this._message=e.message||String(e);}
@@ -255,8 +258,8 @@
       name.value=this._config.name||"";name.setAttribute("aria-label","卡片名稱");
       name.style.cssText="display:block;width:100%;box-sizing:border-box;margin:8px 0 20px;padding:12px;font:inherit";
       name.addEventListener("change",()=>this._change("name",name.value));nameLabel.append(name);
-      const label=E("label","LG 除濕機實體"), select=E("select");
-      select.setAttribute("aria-label","LG 除濕機實體");
+      const label=E("label","定時與狀態實體"), select=E("select");
+      select.setAttribute("aria-label","定時與狀態實體");
       select.style.cssText="display:block;width:100%;margin:8px 0;padding:12px;font:inherit";
       const none=E("option","請選擇官方 LG ThinQ 除濕機");none.value="";select.append(none);
       const candidates=(this._registry||[]).filter(e=>e.platform==="lg_thinq"
@@ -266,6 +269,10 @@
         const option=E("option",(state?.attributes?.friendly_name||e.entity_id)+" · "+e.entity_id);
         option.value=e.entity_id;select.append(option);
       }
+      if (this._config.entity && !candidates.some(e=>e.entity_id===this._config.entity)) {
+        const saved=E("option",this._config.entity+"（目前設定）");
+        saved.value=this._config.entity;select.append(saved);
+      }
       select.value=this._config.entity||"";
       select.addEventListener("change",()=>this._change("entity",select.value));
       label.append(select);
@@ -273,7 +280,30 @@
         !candidates.length?"找不到官方 LG ThinQ 實體；請先設定官方整合，或在 YAML 模式填入已測試成功的實體 ID。":
         "選擇除濕機的電源 switch 或 humidifier 實體。卡片會檢查是否為除濕機。");
       note.style.cssText="font-size:13px;line-height:1.7;color:var(--secondary-text-color)";
-      wrap.append(nameLabel,label,note);this.shadowRoot.replaceChildren(wrap);
+      const timerInputLabel=E("label","定時實體 ID（也可直接貼上）"), timerInput=E("input");
+      timerInput.value=this._config.entity||"";timerInput.setAttribute("aria-label","定時實體 ID");
+      timerInput.style.cssText=name.style.cssText;
+      timerInput.addEventListener("change",()=>this._change("entity",timerInput.value.trim()));
+      timerInputLabel.append(timerInput);
+      const powerLabel=E("label","電源實體（留空時沿用定時實體）"), powerSelect=E("select");
+      powerSelect.setAttribute("aria-label","電源實體");powerSelect.style.cssText=select.style.cssText;
+      const same=E("option","沿用定時實體");same.value="";powerSelect.append(same);
+      const powers=[...candidates];
+      if(this._config.power_entity && !powers.some(e=>e.entity_id===this._config.power_entity))
+        powers.push({entity_id:this._config.power_entity});
+      for(const e of powers) {
+        const option=E("option",(this._hass?.states?.[e.entity_id]?.attributes?.friendly_name||e.entity_id)+" · "+e.entity_id);
+        option.value=e.entity_id;powerSelect.append(option);
+      }
+      powerSelect.value=this._config.power_entity||"";
+      powerSelect.addEventListener("change",()=>this._change("power_entity",powerSelect.value));
+      powerLabel.append(powerSelect);
+      const powerInputLabel=E("label","電源實體 ID（也可直接貼上）"), powerInput=E("input");
+      powerInput.value=this._config.power_entity||"";powerInput.style.cssText=name.style.cssText;
+      powerInput.setAttribute("aria-label","電源實體 ID");
+      powerInput.addEventListener("change",()=>this._change("power_entity",powerInput.value.trim()));
+      powerInputLabel.append(powerInput);
+      wrap.append(nameLabel,label,timerInputLabel,powerLabel,powerInputLabel,note);this.shadowRoot.replaceChildren(wrap);
     }
   }
   if(!customElements.get(TAG)) customElements.define(TAG,LGTimerCard);

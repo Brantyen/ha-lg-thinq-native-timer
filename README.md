@@ -147,3 +147,24 @@ HACS 自訂儲存庫也可以直接從預設分支安裝，不要求先發佈 Re
 
 移除卡片、YAML 設定或 UI 整合後重新啟動 HA，再由 HACS 移除檔案。
 移除擴充不會取消已設定的原生定時，請先在 ThinQ App 或 HA 取消。
+
+## v0.2.3：分開定時與電源實體
+
+卡片可為原生定時查詢／設定／取消，以及電源控制，分別指定實體。
+留空 power_entity 時維持原有行為。編輯器同時提供下拉選單與可直接貼上 ID 的輸入欄位。
+
+```yaml
+type: custom:lg-thinq-timer-card
+name: 客廳除濕機
+entity: humidifier.living_room_dehumidifier
+power_entity: humidifier.living_room_dehumidifier_power
+grid_options:
+  columns: 12
+  rows: auto
+```
+
+這兩個 ID 是使用者的配置範例；請換成自己測試成功的實體。
+若手動管理前端資源，更新為 JavaScript 模組：
+`/lg_thinq_native_timer_card.js?v=0.2.3`，移除同卡片舊版資源並重新載入前端。
+HACS 更新後完整重新啟動 HA。新增分開實體的測試，卡片測試共 16 項。
+同一 LG 設備的不同官方實體，理論上會由後端解析至同一設備；此改動不代表已證實 ID 差異是未讀回定時的唯一原因。

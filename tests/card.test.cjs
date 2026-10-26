@@ -131,3 +131,21 @@ test("graphical editor preserves config when selecting an entity",()=>{
 
 test("sections use content height instead of eight fixed rows",()=>{const {Card}=setup();const c=new Card(); assert.equal(c.getGridOptions().rows,"auto"); assert.equal(c.getGridOptions().min_rows,undefined);});
 test("masonry reports measured card height",()=>{const {Card}=setup();const c=new Card();c.shadowRoot.querySelector=()=>({getBoundingClientRect:()=>({height:731})});assert.equal(c.getCardSize(),15);});
+
+test("separate timer and power entities route to their own actions",async()=>{
+ const requests=[],powerCalls=[];
+ const c=await ready(setup(),async req=>{requests.push(req);return {response:{profile_sleepTimer:profile,observed:{timer_state:"SET",remaining_minutes:60},verified_by_readback:true}};});
+ c.setConfig({entity,power_entity:"humidifier.test_lg_power"});
+ c._hass.states["humidifier.test_lg_power"]={state:"on",attributes:{}};
+ c._hass.callService=async(...args)=>powerCalls.push(args);
+ await c._action("set_timer");await c._action("cancel_timer");await c._power();
+ assert.equal(requests[1].service_data.entity_id,entity);
+ assert.equal(requests[2].service_data.entity_id,entity);
+ assert.equal(powerCalls[0][2].entity_id,"humidifier.test_lg_power");
+});
+test("power state comes from separate power entity",async()=>{
+ const c=await ready(setup());c.setConfig({entity,power_entity:"switch.power"});
+ c._hass.states["switch.power"]={state:"off",attributes:{}};c._update();
+ assert.equal(c._nodes.apply.disabled,true);
+ assert.equal(c._nodes.state.textContent,"已關機");
+});
