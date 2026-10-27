@@ -1,4 +1,4 @@
-/* LG ThinQ Native Timer Card v0.2.3. No external scripts or credentials. */
+/* LG ThinQ Native Timer Card v0.2.4. No external scripts or credentials. */
 (() => {
   "use strict";
   const TAG = "lg-thinq-timer-card";
@@ -51,7 +51,7 @@
       this._config={...config};
       if(changed) {
         this._generation++; this._observed=null; this._profile=null;
-        this._readAt=null; this._validated=false; this._busy=false; this._message="";
+        this._readAt=null; this._pending=null; this._validated=false; this._busy=false; this._message="";
       }
       if(!this._nodes) this._build();
       this._syncControls(); this._update();
@@ -171,6 +171,9 @@
     _renderTimer() {
       if(!this._nodes) return;
       const n=this._nodes, obs=this._observed;
+      if(this._pending) {
+        n.time.textContent="等待確認";n.timerLabel.textContent="正在同步 LG 定時狀態";return;
+      }
       if(!obs) {n.time.textContent="—";n.timerLabel.textContent="尚未讀取";return;}
       if(obs.timer_state==="UNSET") {n.time.textContent="未設定";n.timerLabel.textContent="原生關機定時";return;}
       if(obs.timer_state==="SET" && Number.isFinite(obs.remaining_minutes)) {
@@ -198,7 +201,7 @@
         const r=await this._call("inspect_timer",{entity_id:this._config.entity});
         if(gen!==this._generation) return;
         this._profile=r.profile_sleepTimer||{};
-        this._observed=r.observed;this._readAt=Date.now();this._validated=true;
+        this._observed=r.observed;this._readAt=Date.now();this._validated=true;this._pending=null;
         this._error=false;this._message="";
       } catch(e) {
         if(gen===this._generation) {this._error=true;this._message=e.message||String(e);}
@@ -206,18 +209,19 @@
     }
     async _action(service) {
       if(this._busy || !this._validated) return;
-      const gen=this._generation;this._busy=true;this._error=false;this._message="正在送出原生定時…";this._update();
+      const gen=this._generation;this._pending=service;this._busy=true;this._error=false;this._message="正在送出定時並同步 LG 狀態…";this._update();
       const data={entity_id:this._config.entity};
       if(service==="set_timer") data.minutes=this._hours*60;
       try {
         const r=await this._call(service,data);
         if(gen!==this._generation) return;
         if(r.observed) {this._observed=r.observed;this._readAt=Date.now();}
+        if(r.verified_by_readback) this._pending=null;
         this._message=r.verified_by_readback?
           (service==="set_timer"?"定時已設定，LG 狀態已確認。":"定時已取消，LG 狀態已確認。"):
           "指令已送出，尚待 LG 確認。請稍後重新整理。";
       } catch(e) {
-        if(gen===this._generation){this._error=true;this._message=e.message||String(e);}
+        if(gen===this._generation){this._pending=null;this._error=true;this._message=e.message||String(e);}
       } finally {if(gen===this._generation){this._busy=false;this._update();}}
     }
     async _power() {

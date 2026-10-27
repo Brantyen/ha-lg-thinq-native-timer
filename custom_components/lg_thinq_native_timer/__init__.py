@@ -11,6 +11,7 @@ from homeassistant.core import SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 
+from .confirmation import confirm, matches
 from .logic import TimerUnsupported, timer_profile, set_payload, cancel_payload, snapshot
 
 DOMAIN = "lg_thinq_native_timer"
@@ -40,19 +41,20 @@ def resolve_device(hass, entity_id):
 
 async def async_setup(hass, config):
     locks = {}
+    pending = {}
     await hass.http.async_register_static_paths([
         StaticPathConfig("/lg_thinq_native_timer_static",
                          str(Path(__file__).parent / "frontend"), False),
         StaticPathConfig("/lg_thinq_native_timer_card.js",
                          str(Path(__file__).parent / "frontend" / "lg-thinq-timer-card.js"), False)
     ])
-    add_extra_js_url(hass, "/lg_thinq_native_timer_card.js?v=0.2.3")
+    add_extra_js_url(hass, "/lg_thinq_native_timer_card.js?v=0.2.4")
 
     async def frontend_status(call):
         exists = await hass.async_add_executor_job(
             (Path(__file__).parent / "frontend" / "lg-thinq-timer-card.js").is_file)
-        return {"loaded_version": "0.2.3", "frontend_file_exists": exists,
-                "resource_url": "/lg_thinq_native_timer_card.js?v=0.2.3",
+        return {"loaded_version": "0.2.4", "frontend_file_exists": exists,
+                "resource_url": "/lg_thinq_native_timer_card.js?v=0.2.4",
                 "static_registration_completed": True}
 
     hass.services.async_register(DOMAIN, "frontend_status", frontend_status,
@@ -70,10 +72,15 @@ async def async_setup(hass, config):
                     state = await api.async_get_device_status(device_id)
                     if not isinstance(state, dict):
                         raise HomeAssistantError("LG 未傳回有效設備狀態。")
+                    observed = snapshot(state)
+                    if device_id in pending and matches(observed, *pending[device_id]):
+                        from homeassistant.components import persistent_notification
+                        persistent_notification.async_dismiss(hass, DOMAIN + "_" + device_id + "_unconfirmed")
+                        pending.pop(device_id, None)
                     return {
-                        "integration_version": "0.2.3",
+                        "integration_version": "0.2.4",
                         "profile_sleepTimer": timer_profile(profile),
-                        "observed": snapshot(state),
+                        "observed": observed,
                         "note": "有狀態回報不等於允許寫入；請檢查 profile 的 mode 與 value.w。",
                     }
                 try:
@@ -87,20 +94,18 @@ async def async_setup(hass, config):
 
                 # No local countdown and no power command: submit native timer only.
                 await api.async_post_device_control(device_id, payload)
-                try:
-                    state = await api.async_get_device_status(device_id)
-                    observed = snapshot(state) if isinstance(state, dict) else None
-                except (ThinQAPIException, ClientError, TimeoutError):
-                    observed = None
-                remaining = observed.get("remaining_minutes") if observed else None
-                if call.service == "set_timer":
-                    requested = call.data["minutes"]
-                    verified = bool(observed and observed["timer_state"] == "SET"
-                                    and remaining is not None
-                                    and max(0, requested - 2) <= remaining <= requested)
-                else:
-                    verified = bool(observed and observed["timer_state"] == "UNSET")
+                async def read_status():
+                    try:
+                        state = await asyncio.wait_for(
+                            api.async_get_device_status(device_id), timeout=5)
+                        return snapshot(state) if isinstance(state, dict) else None
+                    except (ThinQAPIException, ClientError, TimeoutError, asyncio.TimeoutError):
+                        return None
+
+                requested = call.data.get("minutes")
+                observed, verified = await confirm(read_status, call.service, requested)
                 if not verified:
+                    pending[device_id] = (call.service, requested)
                     from homeassistant.components import persistent_notification
                     persistent_notification.async_create(
                         hass,
@@ -110,6 +115,7 @@ async def async_setup(hass, config):
                         notification_id=DOMAIN + "_" + device_id + "_unconfirmed",
                     )
                 else:
+                    pending.pop(device_id, None)
                     from homeassistant.components import persistent_notification
                     persistent_notification.async_dismiss(hass, DOMAIN + "_" + device_id + "_unconfirmed")
                 return {"accepted_by_api": True, "verified_by_readback": verified,

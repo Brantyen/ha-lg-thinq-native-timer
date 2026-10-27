@@ -149,3 +149,34 @@ test("power state comes from separate power entity",async()=>{
  assert.equal(c._nodes.apply.disabled,true);
  assert.equal(c._nodes.state.textContent,"已關機");
 });
+
+test("timer waits for confirmed response instead of showing old unset state",async()=>{
+  const c=await ready(setup());let resolve;
+  c._hass.callWS=()=>new Promise(r=>resolve=r);
+  const action=c._action("set_timer");
+  assert.equal(c._nodes.time.textContent,"等待確認");
+  resolve({response:{verified_by_readback:true,observed:{timer_state:"SET",remaining_minutes:120}}});
+  await action;
+  assert.match(c._nodes.time.textContent,/2 小時/);
+  assert.equal(c._pending,null);
+});
+
+test("unconfirmed response stays pending until fresh inspect updates the dial",async()=>{
+  const c=await ready(setup());
+  c._hass.callWS=async()=>({response:{verified_by_readback:false,observed:{timer_state:"UNSET"}}});
+  await c._action("set_timer");
+  assert.equal(c._nodes.time.textContent,"等待確認");
+  c._hass.callWS=async()=>({response:{profile_sleepTimer:profile,observed:{timer_state:"SET",remaining_minutes:119}}});
+  await c._read();
+  assert.match(c._nodes.time.textContent,/1 小時 59 分/);
+});
+
+test("cancel also waits for confirmed state",async()=>{
+  const c=await ready(setup());let resolve;
+  c._hass.callWS=()=>new Promise(r=>resolve=r);
+  const action=c._action("cancel_timer");
+  assert.equal(c._nodes.time.textContent,"等待確認");
+  resolve({response:{verified_by_readback:true,observed:{timer_state:"UNSET"}}});
+  await action;
+  assert.equal(c._nodes.time.textContent,"未設定");
+});
