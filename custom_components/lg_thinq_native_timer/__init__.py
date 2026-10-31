@@ -1,5 +1,6 @@
 """Experimental native timer actions using the installed official integration."""
 import asyncio
+import logging
 from pathlib import Path
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
@@ -11,11 +12,14 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import SupportsResponse, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers.storage import Store
 
 from .confirmation import ConfirmationTracker
+from .resources import cleanup_resources
 from .logic import TimerUnsupported, timer_profile, set_payload, cancel_payload, snapshot
 
 DOMAIN = "lg_thinq_native_timer"
+_LOGGER = logging.getLogger(__name__)
 CONFIG_SCHEMA = vol.Schema({DOMAIN: vol.Schema({})}, extra=vol.ALLOW_EXTRA)
 BASE_SCHEMA = vol.Schema({vol.Required("entity_id"): cv.entity_id})
 
@@ -71,14 +75,46 @@ async def async_setup(hass, config):
         StaticPathConfig("/lg_thinq_native_timer_card.js",
                          str(Path(__file__).parent / "frontend" / "lg-thinq-timer-card.js"), False)
     ])
-    add_extra_js_url(hass, "/lg_thinq_native_timer_card.js?v=0.2.5")
+    add_extra_js_url(hass, "/lg_thinq_native_timer_card.js?v=0.2.6")
+
+    # frontend depends on Lovelace, so its resource collection is ready here.
+    # The automatic URL above is registered before removing redundant entries.
+    async def backup_resources(items):
+        store = Store(hass, 1, DOMAIN + "_resource_backup")
+        previous = await store.async_load() or {"resources": []}
+        saved = list(previous.get("resources", []))
+        for item in items:
+            if item not in saved:
+                saved.append(item)
+        await store.async_save({"resources": saved})
+
+    try:
+        resource_cleanup = await cleanup_resources(hass.data.get("lovelace"), backup_resources)
+    except Exception as exc:
+        # Resource migration must not disable device controls if storage fails.
+        resource_cleanup = {"status": "error", "removed": None}
+        _LOGGER.warning("LG timer resource cleanup could not complete (%s)", type(exc).__name__)
+    if resource_cleanup["status"] in ("yaml_manual", "error", "unavailable"):
+        from homeassistant.components import persistent_notification
+        persistent_notification.async_create(
+            hass,
+            "新版卡片已自動載入。舊資源未能自動清理，請檢查儀表板資源。"
+            "若資源由 YAML 管理，請移除本卡片的舊資源項目後重新載入資源。",
+            title="LG 原生定時：卡片資源清理",
+            notification_id=DOMAIN + "_resource_cleanup")
+    else:
+        from homeassistant.components import persistent_notification
+        persistent_notification.async_dismiss(hass, DOMAIN + "_resource_cleanup")
+        if resource_cleanup["removed"]:
+            _LOGGER.info("Removed %s redundant LG timer resource entries", resource_cleanup["removed"])
 
     async def frontend_status(call):
         exists = await hass.async_add_executor_job(
             (Path(__file__).parent / "frontend" / "lg-thinq-timer-card.js").is_file)
-        return {"loaded_version": "0.2.5", "frontend_file_exists": exists,
-                "resource_url": "/lg_thinq_native_timer_card.js?v=0.2.5",
-                "static_registration_completed": True}
+        return {"loaded_version": "0.2.6", "frontend_file_exists": exists,
+                "resource_url": "/lg_thinq_native_timer_card.js?v=0.2.6",
+                "static_registration_completed": True,
+                "resource_cleanup": resource_cleanup}
 
     hass.services.async_register(DOMAIN, "frontend_status", frontend_status,
         schema=vol.Schema({}), supports_response=SupportsResponse.ONLY)
@@ -98,7 +134,7 @@ async def async_setup(hass, config):
                     observed = snapshot(state)
                     tracker.observe(device_id, observed)
                     return {
-                        "integration_version": "0.2.5",
+                        "integration_version": "0.2.6",
                         "profile_sleepTimer": timer_profile(profile),
                         "observed": observed,
                         "confirmation": tracker.status(device_id),

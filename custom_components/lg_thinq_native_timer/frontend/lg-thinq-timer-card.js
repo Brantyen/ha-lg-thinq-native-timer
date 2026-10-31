@@ -1,4 +1,4 @@
-/* LG ThinQ Native Timer Card v0.2.5. No external scripts or credentials. */
+/* LG ThinQ Native Timer Card v0.2.6. No external scripts or credentials. */
 (() => {
   "use strict";
   const TAG = "lg-thinq-timer-card";
