@@ -1,7 +1,7 @@
 {
   "domain": "lg_thinq_native_timer",
   "name": "LG ThinQ Native Timer",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "config_flow": true,
   "integration_type": "service",
   "documentation": "https://github.com/Brantyen/ha-lg-thinq-native-timer",

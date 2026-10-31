@@ -1,4 +1,4 @@
-/* LG ThinQ Native Timer Card v0.2.4. No external scripts or credentials. */
+/* LG ThinQ Native Timer Card v0.2.5. No external scripts or credentials. */
 (() => {
   "use strict";
   const TAG = "lg-thinq-timer-card";
@@ -51,7 +51,7 @@
       this._config={...config};
       if(changed) {
         this._generation++; this._observed=null; this._profile=null;
-        this._readAt=null; this._pending=null; this._validated=false; this._busy=false; this._message="";
+        this._readAt=null; this._pending=null; this._confirmation=null; this._validated=false; this._busy=false; this._message="";
       }
       if(!this._nodes) this._build();
       this._syncControls(); this._update();
@@ -60,12 +60,17 @@
     set hass(hass) {
       this._hass=hass;
       if(!this._config) return;
+      this._subscribe();
       this._update();
       if(this.isConnected && this._config.entity && !this._requested) {
         this._requested=true; this._read();
       }
     }
     connectedCallback() {
+      this._subscribe();
+      this._fastPoll=setInterval(()=> {
+        if(document.visibilityState!=="hidden" && this._pending) this._read();
+      },15000);
       this._poll=setInterval(()=> {
         if(document.visibilityState!=="hidden" && this._config?.entity) this._read();
       },300000);
@@ -73,8 +78,35 @@
       if(this._hass && this._config?.entity) { this._requested=true; this._read(); }
     }
     disconnectedCallback() {
-      clearInterval(this._poll); clearInterval(this._tick); this._requested=false;
+      clearInterval(this._poll); clearInterval(this._tick); clearInterval(this._fastPoll);
+      this._unsubscribe?.();this._unsubscribe=null;
+      this._requested=false;
       this._generation++; this._busy=false;
+    }
+    _subscribe() {
+      if(!this.isConnected || this._unsubscribe || this._subscribing
+          || !this._hass?.connection?.subscribeEvents) return;
+      this._subscribing=true;
+      const gen=this._generation;
+      this._hass.connection.subscribeEvents(event=> {
+        // Different official entities can refer to the same LG device.
+        // Re-read this card's entity instead of assuming the caller's ID matches.
+        if(this._config?.entity) {
+          if(this._busy) this._refreshQueued=true;
+          else this._read();
+        }
+      },DOMAIN+"_updated").then(unsubscribe=> {
+        this._subscribing=false;
+        if(!this.isConnected || gen!==this._generation) unsubscribe();
+        else this._unsubscribe=unsubscribe;
+      }).catch(()=> {this._subscribing=false;});
+    }
+    _applyConfirmation(confirmation) {
+      this._confirmation=confirmation||null;
+      this._pending=confirmation?.status==="pending" ? confirmation.operation : null;
+    }
+    _flushRefresh() {
+      if(this._refreshQueued) {this._refreshQueued=false;this._read();}
     }
     _build() {
       const style=E("style",CSS), card=E("ha-card");
@@ -174,6 +206,9 @@
       if(this._pending) {
         n.time.textContent="等待確認";n.timerLabel.textContent="正在同步 LG 定時狀態";return;
       }
+      if(this._confirmation?.status==="unconfirmed") {
+        n.time.textContent="尚未確認";n.timerLabel.textContent="請在 ThinQ App 確認定時";return;
+      }
       if(!obs) {n.time.textContent="—";n.timerLabel.textContent="尚未讀取";return;}
       if(obs.timer_state==="UNSET") {n.time.textContent="未設定";n.timerLabel.textContent="原生關機定時";return;}
       if(obs.timer_state==="SET" && Number.isFinite(obs.remaining_minutes)) {
@@ -201,28 +236,32 @@
         const r=await this._call("inspect_timer",{entity_id:this._config.entity});
         if(gen!==this._generation) return;
         this._profile=r.profile_sleepTimer||{};
-        this._observed=r.observed;this._readAt=Date.now();this._validated=true;this._pending=null;
-        this._error=false;this._message="";
+        this._observed=r.observed;this._readAt=Date.now();this._validated=true;
+        this._applyConfirmation(r.confirmation);
+        this._error=false;
+        this._message=this._pending?"指令已送出，正在背景同步 LG 狀態。":
+          this._confirmation?.status==="unconfirmed"?"尚未確認定時結果，請在 ThinQ App 確認。":"";
       } catch(e) {
         if(gen===this._generation) {this._error=true;this._message=e.message||String(e);}
-      } finally {if(gen===this._generation){this._busy=false;this._update();}}
+      } finally {if(gen===this._generation){this._busy=false;this._update();this._flushRefresh();}}
     }
     async _action(service) {
       if(this._busy || !this._validated) return;
-      const gen=this._generation;this._pending=service;this._busy=true;this._error=false;this._message="正在送出定時並同步 LG 狀態…";this._update();
+      const gen=this._generation;this._confirmation=null;this._pending=service;this._busy=true;this._error=false;this._message="正在送出定時並同步 LG 狀態…";this._update();
       const data={entity_id:this._config.entity};
       if(service==="set_timer") data.minutes=this._hours*60;
       try {
         const r=await this._call(service,data);
         if(gen!==this._generation) return;
         if(r.observed) {this._observed=r.observed;this._readAt=Date.now();}
-        if(r.verified_by_readback) this._pending=null;
+        if(r.confirmation) this._applyConfirmation(r.confirmation);
+        else if(r.verified_by_readback) this._pending=null;
         this._message=r.verified_by_readback?
           (service==="set_timer"?"定時已設定，LG 狀態已確認。":"定時已取消，LG 狀態已確認。"):
-          "指令已送出，尚待 LG 確認。請稍後重新整理。";
+          "指令已送出，尚待 LG 確認；正在自動同步。";
       } catch(e) {
         if(gen===this._generation){this._pending=null;this._error=true;this._message=e.message||String(e);}
-      } finally {if(gen===this._generation){this._busy=false;this._update();}}
+      } finally {if(gen===this._generation){this._busy=false;this._update();this._flushRefresh();}}
     }
     async _power() {
       if(this._busy || !this._validated) return;
@@ -234,7 +273,7 @@
         if(gen===this._generation) {this._error=false;this._message="電源指令已送出，等待設備回報。";}
       } catch(e) {
         if(gen===this._generation){this._error=true;this._message=e.message||String(e);}
-      } finally {if(gen===this._generation){this._busy=false;this._update();}}
+      } finally {if(gen===this._generation){this._busy=false;this._update();this._flushRefresh();}}
     }
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "ha-lg-thinq-native-timer",
-  "version": "0.2.0",
+  "version": "0.2.5",
   "private": true,
   "scripts": {
     "check": "node --check custom_components/lg_thinq_native_timer/frontend/lg-thinq-timer-card.js",

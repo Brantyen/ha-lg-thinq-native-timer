@@ -7,11 +7,12 @@ import voluptuous as vol
 from aiohttp import ClientError
 from thinqconnect import ThinQAPIException
 
-from homeassistant.core import SupportsResponse
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from homeassistant.core import SupportsResponse, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 
-from .confirmation import confirm, matches
+from .confirmation import ConfirmationTracker
 from .logic import TimerUnsupported, timer_profile, set_payload, cancel_payload, snapshot
 
 DOMAIN = "lg_thinq_native_timer"
@@ -41,20 +42,42 @@ def resolve_device(hass, entity_id):
 
 async def async_setup(hass, config):
     locks = {}
-    pending = {}
+    entities = {}
+
+    def changed(device_id, status):
+        from homeassistant.components import persistent_notification
+        notification_id = DOMAIN + "_" + device_id + "_unconfirmed"
+        if status == "confirmed":
+            persistent_notification.async_dismiss(hass, notification_id)
+        else:
+            persistent_notification.async_create(
+                hass, "LG API 已接受指令，但背景查詢 5 分鐘後仍未確認。"
+                "請在 ThinQ App 確認；程式不會自動重送。",
+                title="LG 原生定時：尚未確認", notification_id=notification_id)
+        hass.bus.async_fire(DOMAIN + "_updated", {
+            "entity_id": entities.get(device_id), "status": status})
+
+    tracker = ConfirmationTracker(
+        lambda coro: hass.async_create_background_task(coro, "LG timer confirmation"),
+        changed)
+    @callback
+    def stop_tracking(event):
+        tracker.stop()
+
+    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, stop_tracking)
     await hass.http.async_register_static_paths([
         StaticPathConfig("/lg_thinq_native_timer_static",
                          str(Path(__file__).parent / "frontend"), False),
         StaticPathConfig("/lg_thinq_native_timer_card.js",
                          str(Path(__file__).parent / "frontend" / "lg-thinq-timer-card.js"), False)
     ])
-    add_extra_js_url(hass, "/lg_thinq_native_timer_card.js?v=0.2.4")
+    add_extra_js_url(hass, "/lg_thinq_native_timer_card.js?v=0.2.5")
 
     async def frontend_status(call):
         exists = await hass.async_add_executor_job(
             (Path(__file__).parent / "frontend" / "lg-thinq-timer-card.js").is_file)
-        return {"loaded_version": "0.2.4", "frontend_file_exists": exists,
-                "resource_url": "/lg_thinq_native_timer_card.js?v=0.2.4",
+        return {"loaded_version": "0.2.5", "frontend_file_exists": exists,
+                "resource_url": "/lg_thinq_native_timer_card.js?v=0.2.5",
                 "static_registration_completed": True}
 
     hass.services.async_register(DOMAIN, "frontend_status", frontend_status,
@@ -73,14 +96,12 @@ async def async_setup(hass, config):
                     if not isinstance(state, dict):
                         raise HomeAssistantError("LG 未傳回有效設備狀態。")
                     observed = snapshot(state)
-                    if device_id in pending and matches(observed, *pending[device_id]):
-                        from homeassistant.components import persistent_notification
-                        persistent_notification.async_dismiss(hass, DOMAIN + "_" + device_id + "_unconfirmed")
-                        pending.pop(device_id, None)
+                    tracker.observe(device_id, observed)
                     return {
-                        "integration_version": "0.2.4",
+                        "integration_version": "0.2.5",
                         "profile_sleepTimer": timer_profile(profile),
                         "observed": observed,
+                        "confirmation": tracker.status(device_id),
                         "note": "有狀態回報不等於允許寫入；請檢查 profile 的 mode 與 value.w。",
                     }
                 try:
@@ -93,7 +114,10 @@ async def async_setup(hass, config):
                     ) from exc
 
                 # No local countdown and no power command: submit native timer only.
+                started = tracker.clock()
                 await api.async_post_device_control(device_id, payload)
+                entities[device_id] = call.data["entity_id"]
+                tracker.begin(device_id, call.service, call.data.get("minutes"), started)
                 async def read_status():
                     try:
                         state = await asyncio.wait_for(
@@ -102,24 +126,19 @@ async def async_setup(hass, config):
                     except (ThinQAPIException, ClientError, TimeoutError, asyncio.TimeoutError):
                         return None
 
-                requested = call.data.get("minutes")
-                observed, verified = await confirm(read_status, call.service, requested)
+                observed = await read_status()
+                verified = tracker.observe(device_id, observed)
                 if not verified:
-                    pending[device_id] = (call.service, requested)
+                    # Backend tracking survives closing the card; never resend control.
                     from homeassistant.components import persistent_notification
-                    persistent_notification.async_create(
-                        hass,
-                        "LG API 已接受定時指令，但尚未讀回吻合狀態。"
-                        "請用 inspect_timer 或 ThinQ App 確認；程式不會自動重送。",
-                        title="LG 原生定時：等待確認",
-                        notification_id=DOMAIN + "_" + device_id + "_unconfirmed",
-                    )
-                else:
-                    pending.pop(device_id, None)
-                    from homeassistant.components import persistent_notification
-                    persistent_notification.async_dismiss(hass, DOMAIN + "_" + device_id + "_unconfirmed")
+                    persistent_notification.async_dismiss(
+                        hass, DOMAIN + "_" + device_id + "_unconfirmed")
+                    tracker.follow(device_id, read_status, lock)
+                    hass.bus.async_fire(DOMAIN + "_updated", {
+                        "entity_id": call.data["entity_id"], "status": "pending"})
                 return {"accepted_by_api": True, "verified_by_readback": verified,
-                        "sent": payload, "observed": observed}
+                        "sent": payload, "observed": observed,
+                        "confirmation": tracker.status(device_id)}
             except ThinQAPIException as exc:
                 # Do not stringify exception headers or include credentials.
                 raise HomeAssistantError(

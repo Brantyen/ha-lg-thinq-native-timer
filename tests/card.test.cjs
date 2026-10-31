@@ -106,7 +106,7 @@ test("off and unavailable disable timer apply; disconnect clears polling",async(
   for(const state of ["off","unavailable","unknown"]){
     c._hass.states[entity].state=state;c._update();assert.equal(c._nodes.apply.disabled,true);
   }
-  c.connectedCallback();assert.equal(env.intervals.size,2);
+  c.connectedCallback();assert.equal(env.intervals.size,3);
   c.disconnectedCallback();assert.equal(env.intervals.size,0);
 });
 test("power uses selected entity and does not send a timer action",async()=>{
@@ -179,4 +179,48 @@ test("cancel also waits for confirmed state",async()=>{
   resolve({response:{verified_by_readback:true,observed:{timer_state:"UNSET"}}});
   await action;
   assert.equal(c._nodes.time.textContent,"未設定");
+});
+
+
+test("stale UNSET during backend confirmation keeps dial pending",async()=>{
+  const c=await ready(setup());
+  c._hass.callWS=async()=>({response:{profile_sleepTimer:profile,
+    observed:{timer_state:"UNSET"},confirmation:{status:"pending",operation:"set_timer"}}});
+  await c._read();
+  assert.equal(c._nodes.time.textContent,"等待確認");
+  assert.equal(c._pending,"set_timer");
+});
+test("confirmation timeout is unknown instead of claiming timer is unset",async()=>{
+  const c=await ready(setup());
+  c._hass.callWS=async()=>({response:{profile_sleepTimer:profile,
+    observed:{timer_state:"UNSET"},confirmation:{status:"unconfirmed",operation:"set_timer"}}});
+  await c._read();
+  assert.equal(c._nodes.time.textContent,"尚未確認");
+  assert.equal(c._pending,null);
+});
+test("backend event refreshes an open card for externally submitted commands",async()=>{
+  const c=await ready(setup());let callback,unsubscribed=false;
+  c._hass.connection={subscribeEvents:async(fn,type)=>{
+    assert.equal(type,"lg_thinq_native_timer_updated");callback=fn;
+    return ()=>{unsubscribed=true;};
+  }};
+  c.isConnected=true;c.connectedCallback();await new Promise(setImmediate);
+  let reads=0;
+  c._hass.callWS=async()=>{reads++;return {response:{profile_sleepTimer:profile,
+    observed:{timer_state:"SET",remaining_minutes:57},confirmation:{status:"confirmed"}}};};
+  callback({data:{entity_id:"switch.same_device_power",status:"confirmed"}});
+  await new Promise(setImmediate);
+  assert.equal(reads,1);assert.match(c._nodes.time.textContent,/57 分/);
+  c.disconnectedCallback();assert.equal(unsubscribed,true);
+});
+test("pending poll only reads status and never resends a command",async()=>{
+  const env=setup(),c=await ready(env);c.connectedCallback();
+  await new Promise(setImmediate);
+  c._pending="set_timer";const services=[];
+  c._hass.callWS=async req=>{services.push(req.service);return {response:{profile_sleepTimer:profile,
+    observed:{timer_state:"SET",remaining_minutes:59},confirmation:{status:"confirmed"}}};};
+  env.intervals.get(c._fastPoll)();
+  await new Promise(setImmediate);
+  assert.deepEqual(services,["inspect_timer"]);assert.equal(c._pending,null);
+  c.disconnectedCallback();
 });
